@@ -1,3 +1,62 @@
-<!doctype html><meta charset=utf-8><title>msx.appfxml.com MSX</title>
-<meta http-equiv="refresh" content="0;url=/msx/start.json">
-<p><a href="/msx/start.json">MSX start.json</a></p>
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+	<link rel="shortcut icon" href="//msx.appfxml.com/msx/appfxmlstore_m.png"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Установка и настройка APPFXML STORE</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f0f0f0;
+        }
+        .container {
+            max-width: 700px;
+            margin: 20px auto;
+            padding: 20px;
+            background-color: #fff;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        h1, h2, p {
+            margin: 0 0 20px;
+        }
+		li{ 
+			line-height:1.5;
+		}
+        code {
+            font-family: Consolas, monospace;
+            background-color: #f4f4f4;
+            padding: 5px;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Установка и настройка APPFXML STORE</h1>
+        <ol>
+            <li>Зайдите в "магазин" вашего устройства и скачайте приложение "Media Station X"</li>
+            <li>Запустите приложение Media Station X</li>
+            <li>Откройте настройки (Settings) - (Start Parameter) - (Setup)</li>
+            <li>Введите в поле адрес плейлиста: <code id="playlist-url">msx.appfxml.com</code></li>
+        </ol>
+        <p>Далее следуйте указаниям в приложении Media Station X для запуска APPFXML STORE</p>
+        <img id="playlist-image" src="//msx.appfxml.com/msx/icons/msx.appfxml.com_2.png" width="700" alt="Start Parameter msx.appfxml.com" />
+    </div>
+
+    <script>
+        const currentDomain = window.location.hostname || "msx.appfxml.com";
+        const playlistUrlElement = document.getElementById("playlist-url");
+        if (playlistUrlElement) {
+            playlistUrlElement.textContent = currentDomain;
+        }
+        const imageElement = document.getElementById("playlist-image");
+        if (imageElement) {
+            imageElement.src = imageElement.src.replace("msx.appfxml.com", currentDomain);
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Выбор иконки</title>
+    <meta charset="UTF-8" />
+    <meta name="author" content="Ваше Имя" />
+    <meta name="contact" content="your@email.com" />
+    <meta name="copyright" content="Ваше Имя" />
+    <script type="text/javascript" src="//msx.benzac.de/js/tvx-plugin.min.js"></script>
+</head>
+<body style="background: rgba(31, 31, 31, 0.71);">
+    <script>
+        function IconHandler() {
+            var lParams = {};
+            var m = location.href.match(new RegExp("el=(.*?)(&|$|#)"));
+            if (m) {
+                lParams = JSON.parse(decodeURIComponent(m[1])) || {};
+            }
+            console.log("lParams", lParams);
+            var iconList = [
+    { title: "Фильмы", icon: "movie" },
+    { title: "Сериалы", icon: "theaters" },
+    { title: "Кинотеатры", icon: "local-movies" },
+    { title: "Популярное", icon: "trending-up" },
+    { title: "Новинки", icon: "new-releases" },
+    { title: "Моя коллекция", icon: "collections" },
+    { title: "Закладки", icon: "bookmark" },
+    { title: "Рекомендации", icon: "thumb-up" },
+    { title: "Смотреть позже", icon: "schedule" },
+    { title: "История просмотров", icon: "history" },
+    { title: "Жанры", icon: "category" },
+    { title: "Трейлеры", icon: "ondemand-video" },
+    { title: "Короткометражки", icon: "video-library" },
+    { title: "Документальные", icon: "library-books" },
+    { title: "Мультфильмы", icon: "animation" },
+    { title: "Любимые фильмы", icon: "favorite" },
+    { title: "Фестивали", icon: "emoji-events" },
+    { title: "Актёры", icon: "face" },
+    { title: "Режиссёры", icon: "account-circle" },
+    { title: "Сценаристы", icon: "create" },
+    { title: "Оскар", icon: "stars" },
+    { title: "Рейтинг", icon: "star-rate" },
+    { title: "Рецензии", icon: "rate-review" },
+    { title: "Саундтреки", icon: "music-note" },
+    { title: "Постеры", icon: "photo" },
+    { title: "Кадры из фильмов", icon: "image" },
+    { title: "Гифки", icon: "gif" },
+    { title: "Обои", icon: "wallpaper" },
+    { title: "Фан-арты", icon: "brush" },
+    { title: "За кадром", icon: "camera-roll" },
+    { title: "Интервью", icon: "mic" },
+    { title: "Стриминг", icon: "live-tv" },
+    { title: "Киноновости", icon: "article" },
+    { title: "Видеообзоры", icon: "slideshow" },
+    { title: "Киноцитаты", icon: "format-quote" },
+    { title: "Киноляпы", icon: "bug-report" },
+    { title: "Съёмочные локации", icon: "place" },
+    { title: "Киношкола", icon: "school" },
+    { title: "VR-кино", icon: "360" }
+];
+
+
+            var createIconItem = function (iconData) {
+                return {
+                    title: iconData.title,
+                    icon: "msx-white-soft:" + iconData.icon,
+                    action: "interaction:commit",
+                    data: { action: "icon:select:" + iconData.icon }
+                };
+            };
+
+            var createIconList = function () {
+                return iconList.map(createIconItem);
+            };
+
+            var panel = {
+                type: "list",
+                headline: lParams.title || "Выберите иконку",
+                template: {
+                    type: "separate",
+                    layout: "0,0,1,2",
+                    color: "msx-glass",
+                    icon: "msx-white-soft:movie",
+                    iconSize: "medium"
+                },
+                items: createIconList()
+            };
+
+            this.init = function () {};
+
+            this.ready = function () {};
+
+            this.handleData = function (data) {
+                console.log("handleData", data);
+                console.log("lParams", lParams);
+                try{
+                if (data.data && data.data.action.startsWith("icon:select:")) {
+                    var selectedIcon = data.data.action.replace("icon:select:", "");
+                    if(lParams["playlist_url"].indexOf("http")==0) TVXInteractionPlugin.executeAction("content:"+lParams["playlist_url"].replace("{search}",encodeURIComponent(searchInput)));
+                    else if(lParams["playlist_url"].indexOf("payd_")==0){
+                        if(lParams["parent_url"].indexOf("?")==-1) lParams["parent_url"]+="?";
+                        else lParams["parent_url"]+="&";
+                        lParams["parent_url"]+="payd["+lParams["playlist_url"]+"]="+encodeURIComponent(selectedIcon);
+                        TVXInteractionPlugin.executeAction("content:"+lParams["parent_url"]);
+                    }
+                }
+            }catch(e){
+                console.error("Error in handleData:", e);
+            }
+            };
+
+            this.handleRequest = function (dataId, data, callback) {
+                if (dataId === "init") {
+                    callback(panel);
+                } else {
+                    callback();
+                }
+            };
+        }
+
+        window.onload = function () {
+            TVXInteractionPlugin.setupHandler(new IconHandler());
+            TVXInteractionPlugin.init();
+        };
+    </script>
+</body>
+</html>

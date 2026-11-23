@@ -1,0 +1,913 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>APPFXML STORE Interaction Plugin</title>
+        <meta charset="UTF-8" />
+        <meta name="author" content="Benjamin Zachey" />
+        <meta name="contact" content="admin@benzac.de" />
+        <meta name="copyright" content="Benjamin Zachey" />
+		<script src="//ajax.googleapis.com/ajax/libs/jquery/1.12.4/jquery.min.js"></script>
+        <script type="text/javascript" src="//msx.benzac.de/js/tvx-plugin.min.js"></script>
+		
+
+
+</head>
+<body style="background:rgba(31, 31, 31, 0.71);">
+
+	<script>
+
+/******************************************************************************/
+
+var apidomain="http://msx.appfxml.com";
+var phpdomain="http://msx.appinfo.su"; // PHP on server (msx DNS → GitHub Pages)
+var logger = new TVXLogger();
+function parserstr(pars,s){
+	var x1=-1,x2=-1;
+	if(pars[2]=="" && pars[1]=="") var text=s;
+	else if(pars[1] == "RegExp"||pars[1] == "regexp"){
+		s=s.replace(/\n/g,"").replace(/\r/g,"");					
+		try {
+			regexp= new RegExp(pars[2],(pars[3]||""));										
+			items=regexp.exec(s);
+			var ind=parseInt(pars[4])||0;
+			if(isNaN(ind)) ind=0;
+			text=items[ind];
+		} catch (e) {TVXInteractionPlugin.error("Parse RegExp error "+lParams["parser"]+" failed: " + e.message);}						
+	}
+	else if(pars[1].indexOf(".*?")>=0||pars[2].indexOf(".*?")>=0){
+		s=s.replace(/\n/g,"").replace(/\r/g,"");					
+		try {
+			pg=pars[1]+'(.*?)'+pars[2];
+			regexp= new RegExp(pg,"i");										
+			items=regexp.exec(s);							
+			text=items[1];
+		} catch (e) {TVXInteractionPlugin.error("RegExp Parse error "+lParams["parser"]+" failed: " + e.message);}
+	}
+	else{
+		x1=(pars[1]=="") ? 0 : s.indexOf(pars[1]);
+		if(x1>-1) x1+=pars[1].length;
+		else return "";
+		x2=(pars[2]=="") ? -2 : s.indexOf(pars[2],x1);
+		if(x2==-2) text=s.substr(x1);
+		else if(x2==-1) return "";
+		else text=s.substr(x1, x2-x1);	
+	}
+	return text;
+}
+var allapps,myapps=[],mylinks=null,box_mac="nonundefined",defapps=[];
+function getBasePage(m){
+	var p={};
+	$.each(allapps, function(i, v) {
+		if(i!="items") p[i]=v;
+		if(m&&i=="items") {
+			p[i]=[];
+			defapps=[];
+			$.each(v, function(ii, vv) {
+				if(ii < 4) p[i].push(vv);
+				else if(String(vv.label || "").indexOf("Fork browser") >= 0) defapps.push(vv);
+			});
+		}
+		});
+	return p;
+}
+
+function findItemById(array, id) {
+    for (var i = 0; i < array.length; i++) {
+        if (array[i].id === id) {
+            return array[i];
+        }
+    }
+    return null;
+}
+function findIndexItemById(array, id) {
+    for (var i = 0; i < array.length; i++) {
+        if (array[i].id === id) {
+            return i;
+        }
+    }
+    return -1;
+}
+function findIndexItem(array, id) {
+    for (var i = 0; i < array.length; i++) {
+        if (array[i] === id) {
+            return i;
+        }
+    }
+    return -1;
+}
+var appautost=1,tAuto;
+function fxmlHandler() {
+	var lStorage = new TVXStorage();
+    this.init = function() {
+
+    };
+	
+    this.ready = function() {		
+		TVXInteractionPlugin.executeAction("settings:validate_links:0");
+    };
+    this.handleData = function(data) {
+		console.log("handleData "+data);		
+		try{
+			logger.debug(data);
+			if(data.info){
+				box_mac=data.info.id.substr(0,12);
+				lStorage.set("box_mac",box_mac);
+				return;
+			}
+			else if(data.data&&(data.data.category||data.data.sort||data.data.category===""||data.data.sort==="")){
+				console.log("category "+data.data.category +" sort "+data.data.sort);
+				return loadApps((data.data.category)||"",(data.data.sort||""));
+			}
+			else if(data.data&&data.data.action){				
+				if(data.data.action.indexOf("dialog_response:") == 0) return dialogHandler.handleResponse(data.data.action.split(":")[1]);				
+				else return appfxmlKeyboard.handleControl(data.data.action);
+			}
+			else{
+				console.log("no handleData "+JSON.stringify(data));
+			}
+			
+			
+		}
+		catch(e){
+			console.log("Error in handleData:", e);
+			TVXInteractionPlugin.info("FXMLPlugin error:" + e.message);
+			TVXInteractionPlugin.executeAction("interaction:busy:stop:parsload");		
+		}
+		
+    };
+	function loadApps(cat,sort) {
+		logger.debug("loadApps "+cat +" "+sort);
+		TVXInteractionPlugin.executeAction("content:request:interaction:allapps-"+cat+"-"+sort+"@" + apidomain + "/msx/appfxmlstore.html");
+	}
+	var dialogHandler = {
+    init: function(title, text, image, buttons, callback) {
+        var page = {
+            headline: title,
+            type: "pages",
+            cache: false,
+            template: "",
+            extension: "",
+            overlay: 1,			
+            pages: [{
+                items: [
+                    {
+                        layout: "0,0,4,4",
+                        type: "space",
+                        image: image || "",
+                        imageFiller: "height",
+                    },
+                    {
+                        layout: "4,0,4,5",
+                        type: "space",
+                        text: text
+                    }
+                ]
+            }]
+        };
+
+        var layouts = ["0,5,4,1", "4,5,4,1", "0,6,4,1", "4,6,4,1"];
+        for (var i = 0; i < buttons.length; i++) {
+            var btn = buttons[i];
+            page.pages[0].items.push({
+                id: btn.id,
+                type: "button",
+                layout: (layouts[i] || "0,7,4,1"),
+                label: btn.label,
+                alignment: "label-center",
+				action: "interaction:commit",
+				data: {
+					action: (btn.action || "dialog_response:" + btn.id)
+				}
+            });
+        }
+
+        dialogHandler._callback = callback;
+
+        //TVXInteractionPlugin.executeAction("release:panel");
+		logger.debug(page);
+        dialogHandler._showPage(page);
+    },
+
+    _showPage: function(page) {
+        if (dialogHandler._externalCallback) {
+            dialogHandler._externalCallback(page);
+        }
+    },
+
+    setCallback: function(cb) {
+        dialogHandler._externalCallback = cb;
+    },
+
+    handleResponse: function(id) {
+        if (dialogHandler._callback) {
+            dialogHandler._callback(id);
+            //dialogHandler._callback = null;
+        }
+    }
+};
+
+var categorylink = {
+    icon: "category",
+    iconSize: "small",
+    alignment: "left",
+	alignment:"text-right",
+	centration:"text",
+    label: "Категория",
+    action: "panel:data",
+	type: "control",
+    data: {
+		headline: "Категории",
+		compress: true,
+        template: {
+            layout: "0,0,3,1",
+            type: "control",
+            enumerate: false,
+            action: "interaction:commit",
+            data: {
+                category: "{context:category}",
+				sort: "{context:sort}"
+            }
+        },
+		items: [
+            {
+                icon: "apps",
+                label: "Все",
+                category: "all"
+            },
+            {
+                icon: "movie",
+                label: "Фильмы",
+                category: "movies"
+            },
+            {
+                icon: "local_offer",
+                label: "Бесплатные",
+                category: "free"
+            },
+            {
+                icon: "tv",
+                label: "ТВ",
+                category: "tv"
+            },
+            {
+                icon: "credit_card",
+                label: "Платные",
+                category: "pay"
+            },
+            {
+                icon: "category",
+                label: "Другое",
+                category: "other"
+            },
+            {
+                icon: "music_note",
+                label: "Музыка",
+                category: "music"
+            },
+            {
+                icon: "smart_display",
+                label: "MSX",
+                category: "msx"
+            },
+            {
+                icon: "videogame_asset",
+                label: "Игры",
+                category: "games"
+            },
+            {
+                icon: "folder",
+                label: "Файлы",
+                category: "files"
+            },
+            {
+                icon: "code",
+                label: "FXML",
+                category: "fxml"
+            },
+            {
+                icon: "store",
+                label: "Магазин",
+                category: "store"
+            }
+        ]
+    }
+};
+function categoryName(cat) {
+    if (!cat || typeof cat !== "string") return "";
+    var cats = (cat.indexOf(",") >= 0) ? cat.split(",") : [cat];
+    var names = [];
+
+    for (var i = 0; i < cats.length; i++) {
+        var code = cats[i].trim();
+        if (code === "") continue;
+        for (var j = 0; j < categorylink.data.items.length; j++) {
+            var item = categorylink.data.items[j];
+            if (item.category === code) {
+                names.push(item.label);
+                break;
+            }
+        }
+    }
+    return names.join(", ");
+}
+function getAppById(id) {
+    var parts = id[1].split("-");
+    var index = parseInt(parts[1]);
+    
+    if (!isNaN(index) && defapps[index]) {
+        return defapps[index];
+    } else {
+        return findItemById(allapps.items, id[1]) || findItemById(mylinks, id[1]);
+    }
+}
+
+
+    this.handleRequest = function(dataId, data, callback) {
+		console.log("handleRequest "+dataId);
+		logger.debug(dataId);logger.debug(data);logger.debug(callback);		
+		var startaction=lStorage.get("START_ACTION","");
+		if(!allapps){
+			var s=lStorage.get("apps","");
+			box_mac=lStorage.get("box_mac","");
+			if (s) {
+				var temp = s.split("|");
+				myapps = [];
+				$.each(temp, function(i, val) {
+					if ($.inArray(val, myapps) === -1) {
+						myapps.push(val);
+					}
+				});
+			}
+			//logger.debug("ready "+box_mac);
+			mylinks=JSON.parse(lStorage.get("mylinks","[]"));
+			TVXInteractionPlugin.executeAction("interaction:commit:info:extended");
+			$.ajax({
+				  url: apidomain+"/msx/allapps.json?box_mac="+box_mac,
+				  async: false,
+				  success: function(data)
+				  {
+					// GitHub Pages: Content-Type application/json → jQuery already parsed
+					allapps=(typeof data==="string"?JSON.parse(data):data)||[];
+					//logger.debug(allapps);					
+				  },
+				  error: function (xhr, ajaxOptions, thrownError) {
+					TVXInteractionPlugin.error("Ошибка получения списка приложений{br}status: " + xhr.status+" "+thrownError);
+				  }
+				}).done(function() {
+					TVXInteractionPlugin.executeAction("interaction:busy:stop:parsload");	
+				});
+			
+		}
+		if(dataId.indexOf("edit|")==0) {
+			var id=dataId.split("|");
+			var index = myapps.indexOf(id[1]);
+			var app=getAppById(id);
+			if(app&&startaction==app.action){
+				lStorage.remove("START_ACTION");
+				TVXInteractionPlugin.success("Удалено из приложений и автозапуска!");
+			}
+			if(index>=0){
+				if(id[2]=="delete"){
+					myapps.splice(index,1);
+					var foundIndex = findIndexItemById(mylinks,id[1]);
+					if (foundIndex !== -1) {
+						mylinks.splice(foundIndex, 1);
+						lStorage.set("mylinks",JSON.stringify(mylinks));
+						
+					}					
+				}
+				if(id[2]=="left"&&index>0) myapps.splice(index - 1, 0, myapps.splice(index, 1)[0]);				
+				else if(id[2]=="right"&&index<myapps.length-1)  myapps.splice(index + 1, 0, myapps.splice(index, 1)[0]);
+				lStorage.set("apps",myapps.join("|"));
+			}
+			dataId="my";
+		}
+		if (dataId == "stop"){
+			appautost=0;
+			clearTimeout(tAuto);
+			dataId = "my";
+		}
+		if(dataId.indexOf("autoload|") == 0) {
+			var id=dataId.split("|");
+			startaction=lStorage.get("START_ACTION","");
+			var app=getAppById(id);
+			if(startaction==app.action){
+				lStorage.remove("START_ACTION");
+				TVXInteractionPlugin.success("Удалено из автозапуска!");
+				dataId = "my";	
+				appautost=0;
+				app.tag="";
+				TVXInteractionPlugin.executeAction("update:content:"+id[1], { tag: ""});
+				var page = {template: {layout: "0,0,3,1", type: "control"}};
+					page.ready = {action: "content:request:interaction:my@" + apidomain + "/msx/appfxmlstore.html"};
+					page.items = [{label: "Удалено из автозапуска!"}];
+				return callback(page);
+			}
+			else{
+				dialogHandler.setCallback(callback); 
+				dialogHandler.init(
+					"Вы уверены?",
+					"Вы добавляете ссылку "+app.label+" в автозагрузку.{br} При запуске MSX будет короткая возможность Отменить действие",
+					app.image, 
+					[
+						{ label: startaction==app.action?"Удалить из автозапуска":"Установить в автозапуск", id: "yes" },
+						{ label: "Закрыть", id: "no" }
+					],
+					function(answer) {
+						logger.debug(answer);
+						if (answer == "yes") {
+								lStorage.set("START_ACTION", app.action);
+								TVXInteractionPlugin.success("Установлено в автозапуск MSX "+app.label+"!{br}При запуске MSX будет короткая возможность Отменить действие");
+								var page = {template: {layout: "0,0,3,1", type: "control"}};
+								return TVXInteractionPlugin.executeAction( "content:request:interaction:my@" + apidomain + "/msx/appfxmlstore.html");							
+						} else {
+							TVXInteractionPlugin.executeAction("back");
+						}
+						//var page = {template:{type:"control",layout:"0,0,3,1"},items:[{label:"Ответ получен!"}]};
+						//callback(page);
+					}
+				);
+				return;
+			}			
+		}
+		if (dataId == "my") {
+			if(appautost&&startaction) {
+				tAuto=setTimeout(function(){
+					TVXInteractionPlugin.executeAction(startaction);
+					clearTimeout(tAuto);
+				}, 2200);
+				var page ={
+					template: {
+						type: "control",
+						layout: "0,0,3,1",
+						color: "msx-glass"
+					},
+					items: [						
+					{
+						label: "Отменить",
+						icon: "msx-red:cancel",
+						offset: "9,5,0,0",
+						action: "content:request:interaction:stop@"+apidomain+"/msx/appfxmlstore.html"
+					}]
+				};
+				page.headline = "Автозапуск "+startaction+"...";
+				page.cache = false;
+				appautost=0;
+				return callback(page);
+			}
+			clearTimeout(tAuto);
+			appautost=0;
+			var page = getBasePage(1);
+			page.headline = "Мои приложения APPFXML STORE";
+			page.cache = false;
+			page.items = page.items || [];
+			var foc = true;
+			defapps.forEach(function(el, i) {
+				el.options = {
+						headline: "Опции",
+						template: {
+							enumerate: false,
+							type: "control",
+							layout: "0,0,8,1"
+						},
+						items: [							
+							{
+								icon: "replay-circle-filled",
+								label: (startaction==el.action?"Удалить с автозагрузки":"Установить в автозагрузку"),
+								action: "panel:request:interaction:autoload|def-"+i+"@" + apidomain + "/msx/appfxmlstore.html"
+							},
+							{
+								type: "space",
+								label: el.action
+							}
+						]
+					};
+				el.id="def-"+i;
+				if(startaction&&startaction==el.action) el.tag="Aвтозагрузка";
+				else el.tag="";
+				page.items.push(el);
+			});
+			myapps.forEach(function(appId) {
+				var foundItem = findItemById(allapps.items, appId);
+				var opts = null;
+
+				if (!foundItem) {
+					foundItem = findItemById(mylinks, appId);
+					if (foundItem) {
+						foundItem.selection = {
+							important: true,
+							action: "update:content:overlay:text",
+							data: {
+								text: foundItem.action
+							}
+						};
+
+						opts = {
+							icon: "msx-white:app-registration",
+							label: "Редактировать",
+							action: "content:" + phpdomain + "/msx/add.json?payd[payd_appurl]=" +
+								encodeURIComponent(foundItem.action) +
+								"&payd[payd_appname]=" + encodeURIComponent(foundItem.label) +
+								"&payd[payd_appicon]=" + encodeURIComponent(foundItem.icon) +
+								"&editid=" + appId
+						};
+					}
+				}
+
+				if (foundItem) {
+					var el = JSON.parse(JSON.stringify(foundItem));
+					el.options = {
+						headline: "Опции",
+						caption: "Опции {ico:msx-green:arrow-left}Влево{tb} {ico:msx-yellow:arrow-right}Вправо{tb} {ico:msx-red:stop}Удалить{tb}",
+						template: {
+							enumerate: false,
+							type: "control",
+							layout: "0,0,8,1"
+						},
+						items: [						
+							
+							{
+								key: "green|1",
+								icon: "msx-green:arrow-left",
+								label: "Переместить влево",
+								action: "content:request:interaction:edit|" + appId + "|left@" + apidomain + "/msx/appfxmlstore.html"
+							},
+							{
+								key: "yellow|2",
+								icon: "msx-yellow:arrow-right",
+								label: "Переместить вправо",
+								action: "content:request:interaction:edit|" + appId + "|right@" + apidomain + "/msx/appfxmlstore.html"
+							},
+							{
+								key: "red|3",
+								icon: "msx-red:stop",
+								label: "Удалить",
+								action: "content:request:interaction:edit|" + appId + "|delete@" + apidomain + "/msx/appfxmlstore.html"
+							},
+							{
+								icon: "replay-circle-filled",
+								label:  (startaction==foundItem.action?"Удалить с автозагрузки":"Установить в автозагрузку"),
+								action: "panel:request:interaction:autoload|" + appId + "@" + apidomain + "/msx/appfxmlstore.html"
+							}
+						]
+					};
+
+					if (opts) {
+						el.options.items.push(opts);
+					}
+					if(el.options){
+						el.options.items.push({
+							type: "space",
+							label: foundItem.action
+						});
+					}
+					if(startaction&&startaction==el.action) el.tag="Aвтозагрузка";
+					page.items.push(el);
+				}
+			});
+
+			if(page.items.length<5) {
+				page.items.push({
+						type:"space",
+						text:"Список пуст! Установите необходимые из Все приложения"
+					});
+			}
+			else page.items[4].focus=true;
+			console.log("page");
+			console.log(page);
+			TVXInteractionPlugin.executeAction("release:panel");
+			callback(page);
+		}
+		else if(dataId.indexOf("addpanel|")==0) {
+			logger.debug(page);
+			page= {
+                headline: "Добавить свою ссылку...",
+                template: {
+                    type: "control",
+                    layout: "0,0,8,1",
+                    color: "msx-glass"
+                },
+                items: [
+				{                     
+                    icon: "msx-white:apps",
+                    label: "Из магазина",
+                    action: "content:request:interaction:allapps@" + apidomain + "/msx/appfxmlstore.html"
+                },
+				{                     
+                    icon: "msx-white:play-circle-outline",
+                    label: "Стартовый адрес MSX",
+                    action: "panel:request:interaction:init@"+apidomain+"/msx/keyboard.html?el="+encodeURIComponent(JSON.stringify({
+						"title":"Введите сервер MSX",
+						"playlist_url":"payd_msxurl",
+						"search_on":"Введите сервер MSX",
+						"parent_url":phpdomain+"/msx/addmsx.json"}))
+                }, {
+                    icon: "msx-white:http",
+                    label: "Ссылку на WEB-приложение",
+                    action: "panel:request:interaction:init@"+apidomain+"/msx/keyboard.html?el="+encodeURIComponent(JSON.stringify({
+						"title":"Введите адрес с http",
+						"playlist_url":"payd_appurl",
+						"search_on":"Введите адрес web приложения",
+						"parent_url":phpdomain+"/msx/add.json"}))
+                }]
+            };
+			return callback(page);
+		}
+		else if(dataId.indexOf("open|")==0) {
+			
+			var id=dataId.split("|");
+			//logger.debug("open "+id);
+			if(id[1] && id[1] == "addmsx") {
+				if(id[2]) {
+					var unique = Math.random().toString(36).substring(2, 6);
+					var contentLink = id[2].indexOf("content:")!==0?"content:" + id[2]:id[2];
+					var icon = id[5] || "link";
+					
+					mylinks.unshift({id: unique, label: id[3] || "No Label", icon: icon, action: contentLink});
+					lStorage.set("mylinks", JSON.stringify(mylinks));
+					myapps.unshift(unique);
+					lStorage.set("apps", myapps.join("|"));
+					
+					$.ajax({
+						url: phpdomain + "/msx/index.php?urlinstall=" + encodeURIComponent(contentLink) + "&name=" + encodeURIComponent(id[3] || "No Label") + "&icon=" + encodeURIComponent(icon) + "&box_mac=" + box_mac
+					});
+					
+					TVXInteractionPlugin.success("Добавлено! " + contentLink);
+					
+					var page = {template: {layout: "0,0,3,1", type: "control"}};
+					page.ready = {action: "content:request:interaction:my@" + apidomain + "/msx/appfxmlstore.html"};
+					page.items = [{label: "Добавлено!"}];
+					return callback(page);
+				} else {
+					TVXInteractionPlugin.warn("Ошибка: отсутствует ссылка на контент!");
+				}
+			}
+			else if(id[1] && id[1] == "add") {
+				if(id[4]) {
+					var foundIndex = findIndexItemById(mylinks, id[4]);
+					if(foundIndex != -1) {
+						mylinks[foundIndex] = {id: id[4], label: id[3], icon: id[5] || "link", action: id[2]};
+						lStorage.set("mylinks", JSON.stringify(mylinks));
+						TVXInteractionPlugin.success("Изменено " + id[2]);
+					} else TVXInteractionPlugin.warn("Не найдено #" + id[4]);
+				} else {
+					var exists = mylinks.some(function(item) {
+						return item.action == id[2];
+					});
+					if(exists) TVXInteractionPlugin.warn("Такая ссылка уже есть! " + id[2]);
+					else {
+						var unique = Math.random().toString(36).substring(2, 6);
+						if(!String(id[2]).match(/^(link|menu|content|execute):/)) id[2] = "link:" + id[2];
+						var icon = id[5] || "link";
+						
+						mylinks.unshift({id: unique, label: id[3], icon: icon, action: id[2]});
+						lStorage.set("mylinks", JSON.stringify(mylinks));
+						myapps.unshift(unique);
+						lStorage.set("apps", myapps.join("|"));
+						
+						$.ajax({
+							url: phpdomain + "/msx/index.php?urlinstall=" + encodeURIComponent(id[2]) + "&name=" + encodeURIComponent(id[3]) + "&icon=" + encodeURIComponent(icon) + "&box_mac=" + box_mac
+						});
+						
+						TVXInteractionPlugin.success("Добавлено! " + id[2]);
+					}
+				}
+				var page = {template: {layout: "0,0,3,1", type: "control"}};
+				page.ready = {action: "content:request:interaction:my@" + apidomain + "/msx/appfxmlstore.html"};
+				page.items = [{label: "Добавлено!"}];
+				return callback(page);
+			}
+			else{
+				var app = findItemById(allapps.items, id[1]);
+				logger.debug(app);
+				dialogHandler.setCallback(callback);
+				dialogHandler.init(
+					app.label,
+					(app.description+"{br}{br}"+categoryName(app.category)),
+					app.image,
+					[
+						{ label: myapps.indexOf(id[1]) >= 0 ? "Удалить" : "Установить", id: "butinstall" },
+						{ label: "Запустить", id: "run" }
+					],
+					function(action) {
+						if (action === "butinstall") {
+							var url = phpdomain + "/msx/index.php?install=" + encodeURIComponent(app.action)+"&box_mac="+box_mac;
+							var label, tag = "";
+
+							if (myapps.indexOf(id[1]) >= 0) {
+								url += "&del=1";
+								myapps.splice(myapps.indexOf(id[1]), 1);
+								label = "Установить";
+							} else {
+								myapps.unshift(id[1]);
+								label = "Удалить";
+								tag = "Уст.";
+							}
+
+							$.ajax({ url: url });
+							TVXInteractionPlugin.executeAction("update:panel:butinstall", { label: label });
+							TVXInteractionPlugin.executeAction("update:content:" + id[1], { tag: tag });
+							lStorage.set("apps", myapps.join("|"));
+						} else if (action === "run") {
+							TVXInteractionPlugin.executeAction(app.action);
+						}
+					}
+				);
+
+			}
+		}
+		else if (dataId.indexOf("allapps") == 0) {
+			var page=getBasePage();
+			//page.items=[];
+			page.headline= "APPFXML STORE - Все приложения";
+			page.template=null;
+			page.type = "list";
+var foc = true;
+
+if(dataId.indexOf("allapps-") == 0){
+	var cat=dataId.split("-")[1];
+	var sort=dataId.split("-")[2];
+	if(cat=="all") cat="";	
+}
+else {
+	cat="";
+	sort="";
+}
+
+page.pages = [];
+var coords = [0, 0];
+var maxCoords = [12, 6];
+var inpage = null;
+
+
+var coords = [0, 0];
+var maxCoords = [12, 6];
+var inpage = null;
+
+function addItem(el, size, cat, sort) {
+    el.layout = coords[0] + "," + coords[1] + "," + size[0] + "," + size[1];
+	if(cat||cat==="") {
+		for (var i = 0; i < el.data.items.length; i++) {
+			el.data.items[i].category=cat;
+		}
+	}
+	if(sort||sort==="") {
+		for (var i = 0; i < el.data.items.length; i++) {
+			el.data.items[i].sort=sort;
+		}
+	}
+    if (inpage === null) inpage = { items: [], type: "list" };
+	el.focus=false;
+    inpage.items.push(el);
+
+    coords[0] += size[0];
+    if (coords[0] >= maxCoords[0]) {
+        coords[0] = 0;
+        coords[1] += size[1];
+        if (coords[1] >= maxCoords[1]) {
+            page.pages.push(inpage);
+            inpage = null;
+            coords = [0, 0];
+        }
+    }
+}
+var sortLink={
+	icon: "sort",
+	iconSize: "small",
+	label: "Сортировать",
+	alignment:"text-right",
+	centration:"text",
+	action: "panel:data",
+	type: "control",
+	data: {
+		headline: "Сортировать",
+		template: {
+			layout: "0,0,8,1",
+			type: "control",
+			enumerate: false,
+			action: "interaction:commit",
+			data: {
+				sort: "{context:sort}",
+				category: "{context:category}"
+			}
+		},
+		items: [
+			{
+				label: "По добавлению",
+				sort: ""
+			}, 
+			{
+                label: "Недавно добавленные",
+                sort: "new"
+            },           
+            {
+                label: "Популярные",
+                sort: "popular"
+            },
+			{
+				label: "По названию",
+				sort: "label"
+			}
+		]
+	}
+};
+if(sort) {
+	var label = "";
+	$.each(sortLink.data.items, function(i, item) {
+		if (item.sort === sort) {
+			label = item.label;
+			return false;
+		}
+	});
+	sortLink.text = "{txt:msx-yellow: " + label + "}";
+
+}
+else sortLink.text = "По добавлению";
+if(cat){	
+	categorylink.text = "{txt:msx-yellow:"+categoryName(cat)+"}";
+	page.headline+=" "+categoryName(cat);
+}
+else categorylink.text = "Все";
+
+var filteredItems = [];
+
+$.each(allapps.items, function(i, v) {
+	if (i === 4) {
+		addItem(categorylink, [7, 1],null, sort);
+		addItem(sortLink, [5, 1], cat);
+	}
+
+	if (cat && v.category && String(v.category).indexOf(cat) === -1) return;
+
+	var el = JSON.parse(JSON.stringify(v));
+
+	if (!v.type || (v.type !== "control" && v.type !== "space")) {
+		el.action = "panel:request:interaction:open|" + v.id + "@" + apidomain + "/msx/appfxmlstore.html";
+		el.tag = (myapps.indexOf(v.id) !== -1) ? "Уст." : "";
+		el.alignment = "right";
+		el.titleFooter = "установок " + v.c;
+	}	
+	if(i==2){
+		el.label=String(el.label).replace("blue","white");
+	}
+	if (!el.type) el.type = "control";
+	if(i<4) addItem(el, [3, 1]);
+	else filteredItems.push(el);
+});
+
+// Сортування
+if (sort === "new") {
+	filteredItems.sort(function(a, b) {
+		return (b.d || 0) - (a.d || 0);
+	});
+} else if (sort === "popular") {
+	filteredItems.sort(function(a, b) {
+		return (b.c || 0) - (a.c || 0);
+	});
+} else if (sort === "label") {
+	filteredItems.sort(function(a, b) {
+		var la = (a.label || "").toLowerCase();
+		var lb = (b.label || "").toLowerCase();
+		return la > lb ? 1 : (la < lb ? -1 : 0);
+	}
+);}
+
+// Додаємо елементи
+$.each(filteredItems, function(i, el) {
+	addItem(el, [3, 1]);
+});
+
+
+
+// Добавляем последнюю страницу, если она не пуста
+if (inpage !== null && inpage.items.length > 0) {
+    page.pages.push(inpage);
+}
+
+			TVXInteractionPlugin.executeAction("release:panel");
+			console.log(page);
+			callback(page);
+		}
+        else if (dataId == "init") {
+			appfxmlKeyboard.showPage();
+            callback(appfxmlKeyboard.page);
+        } else {
+            TVXInteractionPlugin.warn("Unknown request data ID: '" + dataId + "'");
+            callback();
+        }
+    };
+}
+
+
+window.onload = function() {
+	
+   TVXInteractionPlugin.setupHandler(new fxmlHandler());
+   TVXInteractionPlugin.init();
+   var img = document.createElement('img');
+   img.src ="https://counter.yadro.ru/hit?t26.11;rhttp%3A//msx.appfxml.com/;s2560*1080*24;uhttp%3A//msx.appfxml.com/;"+Math.random();
+	
+};
+/******************************************************************************/
+</script>
+</body>
+</html>

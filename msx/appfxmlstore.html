@@ -339,16 +339,20 @@ function getAppById(id) {
 				});
 			}
 			//logger.debug("ready "+box_mac);
-			mylinks=JSON.parse(lStorage.get("mylinks","[]"));
+			(function(){
+				var ml=lStorage.get("mylinks","[]");
+				try{ mylinks=(typeof ml==="string")?JSON.parse(ml||"[]"):(ml||[]); }
+				catch(e){ mylinks=[]; }
+			})();
 			TVXInteractionPlugin.executeAction("interaction:commit:info:extended");
 			$.ajax({
 				  url: apidomain+"/msx/allapps.json?box_mac="+box_mac,
 				  async: false,
+				  dataType: "text", // avoid auto-JSON (GitHub Pages Content-Type) → JSON.parse("[object Object]")
 				  success: function(data)
 				  {
-					// GitHub Pages: Content-Type application/json → jQuery already parsed
-					allapps=(typeof data==="string"?JSON.parse(data):data)||[];
-					//logger.debug(allapps);					
+					try{ allapps=(typeof data==="string"?JSON.parse(data):data)||[]; }
+					catch(e){ allapps={items:[]}; TVXInteractionPlugin.error("allapps JSON: "+e.message); }
 				  },
 				  error: function (xhr, ajaxOptions, thrownError) {
 					TVXInteractionPlugin.error("Ошибка получения списка приложений{br}status: " + xhr.status+" "+thrownError);
